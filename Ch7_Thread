@@ -1,0 +1,240 @@
+#include<windows.h>
+#include<iostream>
+#include <processthreadsapi.h>
+#include <stdio.h>
+#include <thread>
+#include <vector>
+#include <fstream>
+#include <tchar.h>
+#include <time.h>
+
+
+using namespace std;
+
+///// #1 //////
+
+static unsigned _stdcall thread_main(void* arg)
+{
+    fprintf(stderr, "Hello from thread! (ThreadID: %u)\n", GetCurrentThreadId());
+    while (1) {
+        //fprintf(stderr, "Hello from thread! (ThreadID: %u)\n", GetCurrentThreadId());
+        Sleep(5000); // <-- simulate some work the thread might be doing
+    }
+    
+    return 0;
+}
+
+
+HANDLE ChreateMyThread()
+{
+    // start thread
+    // note: we should use _beginthreadex() instead of calling CreateThread() directly!
+    fputs("Creating thread...\n", stderr);
+    HANDLE hThread = (HANDLE)_beginthreadex(NULL, 0, thread_main, NULL, 0, NULL);
+    if (!hThread) {
+        fputs("Failed to create thread!\n", stderr);
+        
+    }
+    
+    return hThread;
+
+    
+}
+
+void SuspendMyThread(HANDLE hThread)
+{
+    DWORD previous_suspend_count = SuspendThread(hThread);
+    if (previous_suspend_count == -1) {
+        fputs("Suspend thread failed...\n",stderr);
+        //cout <<"Error code: "<< dw << endl;
+    }
+    cout << "suspend thread" << endl;
+    cout << "suspend count : " << previous_suspend_count << endl;
+}
+
+void ResumeMyThread(HANDLE hThread)
+{
+    // resume thread
+    fputs("Resuming thread...\n", stderr);
+    if (ResumeThread(hThread) == ((DWORD)(-1))) {
+        fputs("Failed to resume thread!\n", stderr);
+        cout << "Error code: " << GetLastError() << endl;
+        return;
+    }
+
+    fputs("Thread resumed.\n", stderr);
+    
+}
+void Exercise_1()
+{
+    vector<HANDLE> vThread;
+    for (int i = 0; i < 5; i++) {
+        HANDLE hThread = ChreateMyThread();
+        vThread.push_back(hThread);
+    }
+
+    // wait some time
+    fputs("Sleeping...\n", stderr);
+    Sleep(5000);
+    fputs("Wake up!\n", stderr);
+
+    string command;
+    int threadID;
+    while(1) {
+        cout << "input command: ";
+        cin >> command >> threadID;
+        cout << "threadID:" << threadID << endl;
+        if (command == "exit") {
+            break;
+        }
+
+        HANDLE hCurrentThread = OpenThread(THREAD_ALL_ACCESS, false, threadID);
+        if (command == "suspend") {
+            SuspendMyThread(hCurrentThread);
+        }
+        else if (command == "resume") {
+            ResumeMyThread(hCurrentThread);
+        }
+
+        
+    }
+}
+
+///// #2 //////
+
+
+int GetWordCount(string fileName)
+{
+    ifstream fin; 
+    fin.open(fileName, ifstream::in);
+    int word = 1; //will not count first word so initial value is 1
+    char ch;
+    fin.seekg(0, ios::beg); //bring position of file pointer to begining of file
+    
+    while (fin) {
+        fin.get(ch);
+        while (fin >> noskipws >> ch)
+            word++;
+    }
+
+    cout << "Word count: " << word << "\n";
+    fin.close(); 
+    return word;
+}
+
+void WaitForSingleProcess()
+{
+    STARTUPINFO info = { sizeof(info) };
+    PROCESS_INFORMATION processInfo;
+    TCHAR commandLine[500];
+
+
+    clock_t start = clock();
+
+    for (int i = 1; i < 4; i++) {
+        _stprintf_s(commandLine, _T("GetWordCount_example-%d.exe"), i);
+        if (CreateProcessW(NULL, commandLine, NULL, NULL, TRUE, 0, NULL, NULL, &info, &processInfo)) {
+            cout << "create process: " << i << endl;
+            WaitForSingleObject(processInfo.hProcess, INFINITE);
+
+            CloseHandle(processInfo.hProcess);
+            CloseHandle(processInfo.hThread);
+        }
+    }
+    clock_t end = clock();
+    cout << "time : " << (double)(end - start) / CLOCKS_PER_SEC << " seconds." << endl;
+}
+
+void WaitForMultipleProcess()
+{
+    STARTUPINFO info = { sizeof(info) };
+    PROCESS_INFORMATION processInfo;
+    TCHAR commandLine[500];
+    HANDLE* hProc = new HANDLE[3];
+
+    for (int i = 0; i < 3; i++) {
+        _stprintf_s(commandLine, _T("GetWordCount_example-%d.exe"), i + 1);
+        if (CreateProcessW(NULL, commandLine, NULL, NULL, TRUE, 0, NULL, NULL, &info, &processInfo)) {
+            cout << "create process: " << i + 1 << endl;
+            hProc[i] = processInfo.hProcess;
+
+        }
+    }
+    clock_t start = clock();
+    for (int iProc = 0; iProc < 3; iProc += MAXIMUM_WAIT_OBJECTS) {
+        WaitForMultipleObjects(min(MAXIMUM_WAIT_OBJECTS, 3 - iProc),
+            &hProc[iProc], TRUE, INFINITE);
+    }
+
+    clock_t end = clock();
+    CloseHandle(processInfo.hProcess);
+    CloseHandle(processInfo.hThread);
+
+    cout << "time : " << (double)(end - start) / CLOCKS_PER_SEC << " seconds." << endl;
+}
+
+
+
+unsigned _stdcall thread_count_word_1(void* arg)
+{
+    GetWordCount("example-1.txt");
+    return 0;
+}
+unsigned _stdcall thread_count_word_2(void* arg)
+{
+    GetWordCount("example-2.txt");
+    return 0;
+}
+unsigned _stdcall thread_count_word_3(void* arg)
+{
+    GetWordCount("example-3.txt");
+    return 0;
+}
+
+void WaitForAtomicThread()
+{
+    clock_t start = clock();
+
+    HANDLE hThread = (HANDLE)_beginthreadex(NULL, 0, thread_count_word_1, NULL, 0, NULL);
+    WaitForSingleObject(hThread, INFINITE);
+    CloseHandle(hThread);
+    hThread = (HANDLE)_beginthreadex(NULL, 0, thread_count_word_2, NULL, 0, NULL);
+    WaitForSingleObject(hThread, INFINITE);
+    CloseHandle(hThread);
+    hThread = (HANDLE)_beginthreadex(NULL, 0, thread_count_word_3, NULL, 0, NULL);
+    WaitForSingleObject(hThread, INFINITE);
+    CloseHandle(hThread);
+
+    clock_t end = clock();
+    cout << "time : " << (double)(end - start) / CLOCKS_PER_SEC << " seconds." << endl;
+}
+void WaitForMultipleThreads()
+{
+    HANDLE* phThread = new HANDLE[3];
+
+    clock_t start = clock();
+
+    HANDLE hThread1 = (HANDLE)_beginthreadex(NULL, 0, thread_count_word_1, NULL, 0, NULL);
+
+    phThread[0] = hThread1;
+    HANDLE hThread2 = (HANDLE)_beginthreadex(NULL, 0, thread_count_word_2, NULL, 0, NULL);
+
+    phThread[1] = hThread2;
+    HANDLE hThread3 = (HANDLE)_beginthreadex(NULL, 0, thread_count_word_3, NULL, 0, NULL);
+
+    phThread[2] = hThread3;
+
+    WaitForMultipleObjects(3, phThread, TRUE, INFINITE);
+
+    clock_t end = clock();
+    cout << "time : " << (double)(end - start) / CLOCKS_PER_SEC << " seconds." << endl;
+
+}
+
+int main()
+{
+    //WaitForSingleProcess();
+    //WaitForMultipleProcess();
+    //WaitForAtomicThread();
+    WaitForMultipleThreads();
+}
